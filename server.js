@@ -1,47 +1,48 @@
-const express = require('express');
-const cors = require('cors');
+const express = require("express");
+const cors = require("cors");
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// ===== BANCO SIMPLES (MEMÓRIA) =====
+// ===== BANCO EM MEMÓRIA =====
 let keys = {};
 
 // ===== GERAR KEY =====
 function gerarKey() {
-    return 'KEY-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+    return "KEY-" + Math.random().toString(36).substring(2, 10).toUpperCase();
 }
 
-// ===== TEMPOS =====
-function getTempo(tipo) {
-    const now = Date.now();
-
+// ===== TEMPO =====
+function getDuracao(tipo) {
     switch (tipo) {
-        case "diaria": return now + (24 * 60 * 60 * 1000);
-        case "semanal": return now + (7 * 24 * 60 * 60 * 1000);
-        case "mensal": return now + (30 * 24 * 60 * 60 * 1000);
-        case "trimensal": return now + (90 * 24 * 60 * 60 * 1000);
-        case "lifetime": return 9999999999999;
-        default: return null;
+        case "diaria": return 1;
+        case "semanal": return 7;
+        case "mensal": return 30;
+        case "trimensal": return 90;
+        case "lifetime": return 9999;
+        default: return 0;
     }
 }
 
-// ===== GERAR KEY VIA PAINEL =====
-app.get('/gerar', (req, res) => {
-    const tipo = req.query.tipo;
+// ===== GERAR KEY =====
+app.post("/gerar", (req, res) => {
+    const { tipo } = req.body;
 
-    if (!tipo) return res.send("tipo invalido");
+    if (!tipo) return res.status(400).send("tipo invalido");
 
     const key = gerarKey();
-    const expira = getTempo(tipo);
+    const dias = getDuracao(tipo);
+
+    const expira = Date.now() + dias * 24 * 60 * 60 * 1000;
 
     keys[key] = {
-        expira,
-        hwid: null
+        tipo,
+        hwid: null,
+        expira
     };
 
-    res.send({
+    res.json({
         key,
         tipo,
         expira
@@ -49,43 +50,58 @@ app.get('/gerar', (req, res) => {
 });
 
 // ===== VALIDAR KEY =====
-app.get('/validar', (req, res) => {
-    const key = req.query.key;
-    const hwid = req.query.hwid;
+app.get("/validar", (req, res) => {
+    const { key, hwid } = req.query;
 
-    if (!keys[key]) {
-        return res.send("invalido");
-    }
+    if (!key || !hwid) return res.send("invalido");
 
-    const dados = keys[key];
+    if (!keys[key]) return res.send("invalido");
+
+    const data = keys[key];
 
     // expirou
-    if (Date.now() > dados.expira) {
+    if (Date.now() > data.expira) {
         delete keys[key];
         return res.send("expirado");
     }
 
-    // bind HWID
-    if (!dados.hwid) {
-        dados.hwid = hwid;
-    } else if (dados.hwid !== hwid) {
+    // primeira vez (bind HWID)
+    if (!data.hwid) {
+        data.hwid = hwid;
+        return res.send("valido");
+    }
+
+    // outro pc
+    if (data.hwid !== hwid) {
         return res.send("hwid_mismatch");
     }
 
-    res.send("valido");
+    return res.send("valido");
 });
 
 // ===== LISTAR KEYS =====
-app.get('/keys', (req, res) => {
+app.get("/keys", (req, res) => {
     res.json(keys);
 });
 
+// ===== DELETAR KEY =====
+app.delete("/key/:key", (req, res) => {
+    const key = req.params.key;
+
+    if (keys[key]) {
+        delete keys[key];
+        return res.send("deletado");
+    }
+
+    res.send("nao existe");
+});
+
 // ===== ROOT =====
-app.get('/', (req, res) => {
+app.get("/", (req, res) => {
     res.send("API ONLINE 🚀");
 });
 
-// ===== START =====
+// ===== START (OBRIGATÓRIO PRA RENDER) =====
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log("Servidor rodando na porta " + PORT);
